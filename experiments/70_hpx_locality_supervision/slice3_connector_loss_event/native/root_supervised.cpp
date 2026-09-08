@@ -705,10 +705,19 @@ int main(int argc, char* argv[]) {
 
     PlainProbe const pc = plain_probe(roles["c"], 43, 10);
 
+    // joined_peer identity is the PAIR (locality, join_epoch): two incarnations are distinct if
+    // EITHER component differs. This matches upstream server/registry.hpp, whose operator==
+    // compares `target && join_epoch`, so operator!= -- distinctness -- is the disjunction.
+    // Requiring BOTH components to differ is unsatisfiable whenever HPX mints a fresh locality
+    // id, because every new locality's first supervision::init() yields epoch 1; upstream's own
+    // doc comment says the epoch exists to disambiguate a re-join of the SAME peer locality, not
+    // to distinguish two different localities.
     bool const replacement_locality_distinct =
         hpx::naming::get_locality_id_from_id(peer_c.locality) !=
         hpx::naming::get_locality_id_from_id(peer_b.locality);
     bool const replacement_epoch_distinct = peer_c.join_epoch != peer_b.join_epoch;
+    bool const replacement_incarnation_distinct =
+        replacement_locality_distinct || replacement_epoch_distinct;
 
     // ---- final stale-vs-replacement disambiguation (plan step 15) -------------------------
     FenceAttempt const stale_recheck = fence_probe(peer_b.locality, peer_b.join_epoch);
@@ -735,8 +744,9 @@ int main(int argc, char* argv[]) {
             jbool(fd_ok && (resolve_fails_after || membership_after_fd == 2 ||
                             !post_fd_probe_from_root.ok))) + "," +
         jkv("replacement_joined", jbool(pc.ok)) + "," +
-        jkv("replacement_incarnation_distinct",
-            jbool(replacement_locality_distinct && replacement_epoch_distinct)) + "," +
+        jkv("replacement_locality_distinct", jbool(replacement_locality_distinct)) + "," +
+        jkv("replacement_epoch_distinct", jbool(replacement_epoch_distinct)) + "," +
+        jkv("replacement_incarnation_distinct", jbool(replacement_incarnation_distinct)) + "," +
         jkv("replacement_work_ok", jbool(pc.ok)) + "," +
         jkv("stale_incarnation_not_confused_with_replacement",
             jbool(stale_still_rejected && !stale_plain_recheck.ok && pc.ok &&

@@ -152,12 +152,20 @@ recovery is needed for the model to work.
 Gate-by-gate mapping from each A-slice acceptance gate to the runtime fact its B equivalent needs:
 [`native_backend_gap_matrix.md`](native_backend_gap_matrix.md).
 ```text
-2B blocked: missing native explicit completion
-3B blocked: missing native connector departure/loss event
-4B blocked: missing native root completion/loss or liveness event
+2B: unblocked in principle since 2026-07-30 -- native explicit-completion
+    harness not yet built or run
+3B: SATISFIED on current upstream HPX bec10f39 as of 2026-09-08, for the
+    validated silent loss of a late-connected non-console locality
+4B blocked: missing native root/console completion-loss or liveness event,
+    and no symmetric recovery path
 ```
 
-All three are:
+3B's evidence and its exact scope are in
+[`native_backend_gap_matrix.md`](native_backend_gap_matrix.md) and
+[`slice3_connector_loss_event/README.md`](slice3_connector_loss_event/README.md). It does not
+generalise to arbitrary locality failure or to root/console loss.
+
+4B remains:
 
 > upstream-blocked, not harness-blocked
 

@@ -35,11 +35,11 @@ runtime fact each one would consume. A renamed external backend is **not** a nat
 
 ## Block status
 
-| Slice | A-status | B-status (2026-07-19) | B-status (2026-08-18) | Block code |
+| Slice | A-status | B-status (2026-07-19) | B-status (current, each cell dated) | Block code |
 |---|---|---|---|---|
 | 2 | complete (job 173796, medusa11/12) | blocked | unblocked in principle (unchanged since 07-30; no native harness implemented yet) | `blocked_missing_hpx_native_completion` |
-| 3 | complete (job 173797, medusa06/07) | blocked | **native harness implemented, run on hardware (job 185466-185474, medusa00): blocked at `discover_and_join()`**, not a gate PASS | `blocked_missing_hpx_native_event` → superseded, see below |
-| 4 | complete (job 173798, medusa00/01) | blocked | narrowed (detection plausible via symmetric fencing) but still blocked (recovery structurally excluded) | `blocked_missing_hpx_native_root_event` (unchanged) |
+| 3 | complete (job 173797, medusa06/07) | blocked | **UNBLOCKED and PASSED 16/16 on hardware (2026-09-08, job 192305, medusa00, HPX `bec10f39`)**; the 08-18 `discover_and_join()` block was an upstream AGAS symbol-routing defect, fixed upstream | `blocked_missing_hpx_native_event` → **resolved**, see the 2026-09-08 update below |
+| 4 | complete (job 173798, medusa00/01) | blocked | narrowed 2026-08-18 (detection plausible via symmetric fencing) but still blocked (recovery structurally excluded) | `blocked_missing_hpx_native_root_event` (unchanged) |
 
 **What "blocked" forbids.** A B-slice may not be satisfied by Ray actor death, OS process
 liveness, filesystem witnesses, or supervisor inference — nor by moving an existing external
@@ -140,6 +140,37 @@ topology of independently-launched OS processes, not a harness bug — see
 `slice3_connector_loss_event/README.md`'s "Hardware run result" section for the full diagnostic
 trail. `classification_matches_arm`/`evidence_blindness.*` etc. above describe what the
 mechanism *would* close if discovery worked; none of it was exercised on hardware.
+
+**2026-09-08 update — Slice 3B is UNBLOCKED and PASSES 16/16 on hardware.** The 08-18 discovery
+blocker was an upstream defect, not a harness bug, and is fixed upstream:
+`libs/full/agas_base/src/symbol_namespace.cpp`'s `symbol_namespace_locality()` bounded explicit
+`/<locality-id>/` prefix routing by `get_initial_num_localities()`, which stays 1 in a
+late-connect topology, so `/1/…` and `/2/…` fell through to `hash % 1 == 0` and were looked up on
+locality 0. Commit `d5af2db3` (merged via PR #7471) removed that bound. Re-run against HPX
+`bec10f395059738193a1d53d1e8f02acc01f4ce2` (Rostam jobs 192301–192305, medusa00), every
+locality-count observable is unchanged from the failing run while raw cross-locality
+`resolve_name()` now succeeds and `discover_and_join()` returns 2 peers in both directions.
+
+All 16 gates pass, including `<arm>_classification.classification_matches_arm` and
+`<arm>_evidence_blindness.*` in substance: HPX itself published `event::failed` for the
+SIGKILLed connector with `application_failed_event_publish_count == 0`, and the gating oracle is
+`check_admission()` → `rejected_fenced` (plus `dispatch_work` → `HPX(target_fenced)`), not a
+timeout or connection error. `membership_stale` is answered affirmatively for the
+force_disconnect path: AGAS resolve fails after, membership shrinks 3→2, root dispatch returns
+`not_found`, and a *third-party* connector independently reports the departed locality as
+`"locality not found locally"`.
+
+Three caveats survive the pass, and none of them are gate failures:
+
+1. `force_disconnect` is still an explicit root-side call; nothing upstream triggers it from a
+   fencing event.
+2. The `dispatch_work` cross-binary path returned `target_fenced`, which proves the fence check
+   fires but *not* that a fenced action registers correctly for a **successful** dispatch — the
+   wrapped action was never invoked.
+3. Shutdown remains separately classified **INCONCLUSIVE**: `supervision::finalize()` returned
+   (`root.finish_note` rc=0) but `hpx::finalize()`/`hpx::stop()` then hung, and the harness's own
+   teardown ordering (root-exit wait before connectors are stopped) confounds attribution to the
+   upstream shutdown issues. No orphans.
 
 ### Slice 4B — native root completion/loss event or runtime liveness surface
 

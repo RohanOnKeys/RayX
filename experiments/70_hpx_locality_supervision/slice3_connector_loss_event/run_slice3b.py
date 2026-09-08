@@ -294,6 +294,19 @@ def _ray_get(ray_mod, ref, timeout, what):
 # Gate evaluation (pure function over the collected marker mapping)
 # ---------------------------------------------------------------------------------------
 
+def incarnation_distinct(old_locality, old_epoch, new_locality, new_epoch):
+    """Whether two joined_peer incarnations are distinct.
+
+    joined_peer identity is the PAIR (locality, join_epoch), so distinctness is a DISJUNCTION:
+    either component differing is enough. This mirrors upstream server/registry.hpp, whose
+    operator== compares `target && join_epoch`. Requiring both components to differ is
+    unsatisfiable whenever HPX mints a fresh locality id, since every new locality's first
+    supervision::init() yields epoch 1 -- the epoch disambiguates a re-join of the SAME
+    locality, not two different localities. Kept in lockstep with root_supervised.cpp, which
+    computes the same disjunction natively and reports both components separately."""
+    return (old_locality != new_locality) or (old_epoch != new_epoch)
+
+
 def eval_gates(m):
     """Maps the collected marker/result mapping onto the exact GATE_FIELDS list. Every field is
     independently computed; none are folded together."""
@@ -399,9 +412,19 @@ def _synthetic_pass_markers():
                                           "agas_resolve_fails_after": True,
                                           "membership_shrank": True,
                                           "post_force_disconnect_dispatch_failed": True},
+        # Mirrors the root_result.json schema root_supervised.cpp actually writes, including the
+        # incarnation components, so a future field addition on the native side is less likely to
+        # go unmodelled here. Values use the real hardware semantics observed on medusa00:
+        # B=(locality 2, epoch 1) -> C=(locality 3, epoch 1), i.e. a fresh locality id that mints
+        # the same first epoch -- locality distinct, epoch NOT distinct, incarnation distinct.
         "root_result": {"application_failed_event_publish_count": 0,
                          "failed_epoch_or_incarnation_identified": True,
-                         "replacement_joined": True, "replacement_incarnation_distinct": True,
+                         "replacement_joined": True,
+                         "b_locality": 2, "b_join_epoch": 1,
+                         "c_locality": 3, "c_join_epoch": 1,
+                         "replacement_locality_distinct": True,
+                         "replacement_epoch_distinct": False,
+                         "replacement_incarnation_distinct": True,
                          "replacement_work_ok": True,
                          "stale_incarnation_not_confused_with_replacement": True},
     }
@@ -469,7 +492,65 @@ def selftest():
     # 5. GATE_FIELDS and eval_gates() must stay in lockstep (no silently-dropped/renamed gate).
     check("gate_fields_match_eval_gates", sorted(GATE_FIELDS) == sorted(eval_gates(m).keys()))
 
-    # 6. roles.json round-trip (pure file I/O, no HPX/Ray needed).
+    # 6. Incarnation identity is the PAIR (locality, join_epoch) -- exercise the pair semantics
+    #    DIRECTLY rather than through a hardcoded synthetic boolean. The original conjunction
+    #    bug (locality_distinct AND epoch_distinct) survived every earlier selftest only because
+    #    the synthetic marker set asserted replacement_incarnation_distinct=True outright and
+    #    never modelled two localities that both minted epoch 1 -- which is what medusa00
+    #    actually produced: B=(2,1) -> C=(3,1).
+    check("pair_fresh_locality_same_epoch_is_distinct",
+          incarnation_distinct(2, 1, 3, 1) is True)
+    check("pair_same_locality_new_epoch_is_distinct",
+          incarnation_distinct(2, 1, 2, 2) is True)
+    check("pair_same_locality_same_epoch_is_not_distinct",
+          incarnation_distinct(2, 1, 2, 1) is False)
+    check("pair_both_components_differ_is_distinct",
+          incarnation_distinct(2, 1, 3, 2) is True)
+
+    # 6b. Marker-schema self-consistency, using the real hardware shape: a root_result carrying
+    #     B=(2,1)/C=(3,1) must roll up to a PASS, and within that marker set the composite must
+    #     agree both with incarnation_distinct() and with the disjunction of the two components.
+    #     NOTE: these are checks over a marker set constructed here, not over a native-produced
+    #     artifact, so they verify schema/helper self-consistency only -- they do NOT detect
+    #     C++/Python implementation drift. eval_gates() reads the composite that
+    #     root_supervised.cpp emits and never recomputes it, so a native regression to the old
+    #     `&&` semantics would surface as a hardware gate failure, not as a selftest failure.
+    m6 = _synthetic_pass_markers()
+    m6["root_result"] = dict(m6["root_result"])
+    m6["root_result"].update({"b_locality": 2, "b_join_epoch": 1,
+                              "c_locality": 3, "c_join_epoch": 1,
+                              "replacement_locality_distinct": True,
+                              "replacement_epoch_distinct": False,
+                              "replacement_incarnation_distinct": True})
+    r6 = rollup(m6)
+    check("hardware_pair_shape_passes_gate",
+          r6["gates"]["replacement_incarnation_distinct"] is True)
+    check("hardware_pair_shape_passes_overall", r6["passed"] is True)
+    rr6 = m6["root_result"]
+    check("marker_composite_agrees_with_helper",
+          rr6["replacement_incarnation_distinct"] == incarnation_distinct(
+              rr6["b_locality"], rr6["b_join_epoch"],
+              rr6["c_locality"], rr6["c_join_epoch"]))
+    check("marker_composite_agrees_with_component_disjunction",
+          rr6["replacement_incarnation_distinct"] ==
+          (rr6["replacement_locality_distinct"] or rr6["replacement_epoch_distinct"]))
+
+    # 6c. The identical-incarnation case must still FAIL the gate -- proves the disjunction did
+    #     not turn the gate vacuously true (a replacement reusing both locality id and epoch is
+    #     indistinguishable from the departed incarnation and must not be accepted).
+    m7 = _synthetic_pass_markers()
+    m7["root_result"] = dict(m7["root_result"])
+    m7["root_result"].update({"b_locality": 2, "b_join_epoch": 1,
+                              "c_locality": 2, "c_join_epoch": 1,
+                              "replacement_locality_distinct": False,
+                              "replacement_epoch_distinct": False,
+                              "replacement_incarnation_distinct": False})
+    r7 = rollup(m7)
+    check("identical_incarnation_fails_gate",
+          r7["gates"]["replacement_incarnation_distinct"] is False)
+    check("identical_incarnation_fails_overall", r7["passed"] is False)
+
+    # 7. roles.json round-trip (pure file I/O, no HPX/Ray needed).
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         write_roles(td, {"a": 1, "b": 2})

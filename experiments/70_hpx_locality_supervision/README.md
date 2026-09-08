@@ -3,8 +3,9 @@
 **Status:** the A-path is complete and hardware-verified on two-node Rostam hardware. As of
 2026-08-18, the B-path is no longer uniformly "no HPX API exists": upstream landed
 `components/supervision_dispatch` + `hpx::force_disconnect` (HPX #7390/#7441, merged PR #7447).
-Slice 3B now has a **native harness implemented and selftested** against that real API, pending
-a hardware run; Slice 4B's blocking reasons **narrowed but did not close** (recovery via
+Slice 3B is now **complete and PASSES 16/16 on hardware** (2026-09-08, job 192305, medusa00)
+against upstream HPX `bec10f39`, after the AGAS symbol-routing defect that blocked the 08-18 run
+was fixed upstream; Slice 4B's blocking reasons **narrowed but did not close** (recovery via
 `force_disconnect` is structurally excluded for the console/root locality); Slice 2B's status is
 unchanged from the 07-30 assessment (unblocked in principle, no native harness built yet). See
 [`native_backend_gap_matrix.md`](native_backend_gap_matrix.md) for the full, dated,
@@ -115,7 +116,7 @@ refers to a hypothetical future HPX-native facility.
 | 2A | Can completion be explicit and testable? | Complete |
 | 2B | HPX-native completion backend | Unblocked in principle (2026-07-30); no native harness implemented yet |
 | 3A | Can connector loss be classified externally? | Complete |
-| 3B | HPX-native connector departure/loss event + recovery | **Native harness implemented, selftested, and run on Rostam hardware (2026-08-18): blocked at `discover_and_join()` before any gate — see gap matrix** |
+| 3B | HPX-native connector departure/loss event + recovery | **Complete — 16/16 gates on Rostam hardware (2026-09-08, HPX `bec10f39`). The 2026-08-18 `discover_and_join()` block was an upstream AGAS routing defect, fixed upstream. Shutdown separately INCONCLUSIVE — see gap matrix** |
 | 4A | Can root loss be classified externally? | Complete |
 | 4B | HPX-native root completion/loss event | Narrowed (2026-08-18): detection plausible, recovery structurally excluded — see gap matrix |
 
@@ -207,14 +208,26 @@ never calls `publish_event(event::failed)` itself), observes fencing
 (`hpx::supervision::check_admission()`), then **explicitly** invokes `hpx::force_disconnect`
 before a replacement connector joins as a provably distinct incarnation.
 
-**Status (2026-08-18): native harness implemented, 12/12 selftest, run on Rostam hardware
-(job 185466-185474, medusa00) — blocked before any gate.** A fresh isolated HPX install with
+**Status (2026-09-08): PASS — 16/16 gates, 32/32 selftest, Rostam jobs 192301–192305, medusa00,
+upstream HPX `bec10f395059738193a1d53d1e8f02acc01f4ce2`.** HPX itself classified the SIGKILLed
+connector as `event::failed` with zero application-published failure events; the stale
+incarnation was fenced via `check_admission()` → `rejected_fenced`; `force_disconnect` from the
+console produced AGAS, membership, root-dispatch and third-party-connector cleanup evidence; and
+a replacement connector joined as a distinct incarnation and ran verified work. Deterministic
+across four runs. `shutdown_result` is separately **INCONCLUSIVE** and not attributed to
+upstream: `supervision::finalize()` returned, `hpx::finalize()`/`hpx::stop()` then hung, but the
+harness's teardown ordering confounds attribution.
+
+*Superseded status (2026-08-18): native harness implemented, run on Rostam hardware
+(job 185466-185474, medusa00) — blocked before any gate.* A fresh isolated HPX install with
 `-DHPX_WITH_SUPERVISION=ON` built and linked correctly; root and both connectors started and
 each connector's own `supervision_init()` succeeded. The run then consistently failed at
 `hpx::supervision::discover_and_join()`, which found zero cross-process peers in both directions
 across five consecutive attempts, despite each side's own registry name self-resolving
-successfully. See the Slice 3B section below for the full diagnostic trail. No gate claim is
-made; only the discovery-blocked finding itself.
+successfully. That was traced to `symbol_namespace_locality()` bounding explicit
+`/<locality-id>/` routing by `get_initial_num_localities()` (which stays 1 in a late-connect
+topology) and **fixed upstream** in commit `d5af2db3` via PR #7471. The diagnostic trail is kept
+in the Slice 3B section below as provenance for that defect report.
 
 [`slice3_connector_loss_event/README.md`](slice3_connector_loss_event/README.md) (Slice 3B
 section) · [`native_backend_gap_matrix.md`](native_backend_gap_matrix.md) (gate-by-gate mapping)
@@ -253,9 +266,23 @@ classified `suspected_root_loss`, and the poisoned island was discarded.
 
 RayX owns whole-island replacement. HPX is asked only to expose lifecycle facts.
 
-Unexpected loss of any locality poisons the island: exp51/exp53 and Slice 1 all show that the
-safe recovery boundary is discarding the complete island — root and survivors — and constructing
-a fresh one. exp70 adds no partial-island continuation and no AGAS repair.
+For **root/console loss**, and for connector loss on builds without
+`components/supervision_dispatch` + `hpx::force_disconnect`, unexpected loss poisons the island:
+exp51/exp53 and Slice 1 all show that the safe recovery boundary is discarding the complete
+island — root and survivors — and constructing a fresh one. The A-slices add no partial-island
+continuation and no AGAS repair.
+
+**Slice 3B is a scoped exception, validated 2026-09-08 on HPX `bec10f39`.** For the silent loss
+of a *late-connected, non-console* locality, the island survived without a whole-island restart:
+HPX runtime-classified the stale incarnation as `failed` and fenced it, the surviving console
+explicitly called `hpx::force_disconnect`, AGAS/membership/connection-cache cleanup was observed
+(including from a third-party connector), surviving connector A stayed useful, and replacement
+connector C joined and executed verified work.
+
+That exception does **not** extend to root/console loss, to arbitrary locality classes, or to
+automatic recovery, and it is not a generic fault-tolerance claim. `force_disconnect` remains an
+explicit orchestration action taken by the console after observing fencing — HPX never chains it
+from a fencing event — and it cannot target the console/root at all.
 
 ## Native HPX gaps
 
@@ -263,15 +290,22 @@ a fresh one. exp70 adds no partial-island continuation and no AGAS repair.
 Slice 2B requires: HPX-native explicit-completion publication and observation
                     -- unblocked in principle since 2026-07-30; no native harness built yet
 Slice 3B requires: HPX-native connector departure/loss classification + recovery
-                    -- native harness implemented AND RUN on Rostam hardware 2026-08-18
-                       (components/supervision_dispatch + hpx::force_disconnect); blocked at
-                       discover_and_join() finding zero cross-process peers, before any of the
-                       16 gates -- see native_backend_gap_matrix.md for the diagnostic trail
+                    -- SATISFIED on current upstream HPX bec10f39 (2026-09-08, Rostam job
+                       192305, medusa00): semantic result 16/16 PASS over the full path --
+                       late join -> useful work -> hard crash (SIGKILL) -> runtime-native
+                       failed classification -> specific fencing -> explicit root-side
+                       hpx::force_disconnect -> observable cleanup -> replacement join ->
+                       verified work. (Previously blocked on 7b88345, 2026-08-18, because
+                       cross-process supervision-registry lookup failed in AGAS; that defect
+                       was fixed upstream in d5af2db3 / PR #7471. The 08-18 evidence is kept
+                       as provenance.) Shutdown is tracked separately and remains
+                       INCONCLUSIVE -- see native_backend_gap_matrix.md
 Slice 4B requires: HPX-native root completion/loss or runtime liveness notification
-                    -- narrowed 2026-08-18 (detection plausible via the same failure_detection_
-                       loop() mechanism this run showed IS NOT YET RELIABLE cross-process), but
-                       recovery stays structurally excluded regardless: hpx::force_disconnect
-                       can never target the console/root locality
+                    -- narrowed 2026-08-18: detection plausible via the same
+                       failure_detection_loop() mechanism, which the 2026-09-08 run showed
+                       DOES work cross-process for a non-console locality. Recovery stays
+                       structurally excluded regardless: hpx::force_disconnect can never
+                       target the console/root locality
 ```
 
 Gate-by-gate mapping from each A-slice acceptance gate to the upstream runtime fact its B
@@ -361,11 +395,15 @@ logs are deliberately untracked (see `.gitignore`); they remain on disk for loca
 
 ## Future work
 
-* Build HPX with `-DHPX_WITH_SUPERVISION=ON` on Rostam and run Slice 3B's local-live phase for
-  hardware evidence (see `slice3_connector_loss_event/README.md`'s Slice 3B section for the exact
-  commands) — this is the concrete next step, not a vague direction.
-* If Slice 3B's hardware run passes, consider whether Slice 2B (explicit completion) is now
-  implementable against the same `hpx::supervision` API without a new upstream ask.
+* Slice 3B's hardware evidence is **done** (2026-09-08, jobs 192301–192305, HPX `bec10f39`,
+  16/16). The concrete next step is Slice 2B (explicit completion), which is now implementable
+  against the same `hpx::supervision` API without a new upstream ask — the discovery mechanism
+  it depends on is hardware-proven by 3B.
+* Two narrower follow-ups, both smaller than a slice: a teardown-ordering control (stop
+  connectors A/C *before* waiting on root exit) to decide whether Slice 3B's shutdown hang is
+  the upstream shutdown issue or purely harness ordering; and a successful (non-fenced)
+  cross-binary `dispatch_work<Action>()` dispatch, which the 3B run did not exercise because the
+  fence short-circuits before the wrapped action is invoked.
 * Slice 4B has no equivalent next step: `hpx::force_disconnect` cannot target the console/root by
   design, so root-loss recovery stays genuinely upstream-blocked regardless of further local
   work. Root-loss *detection* narrowed (see the gap matrix) but was not independently prototyped

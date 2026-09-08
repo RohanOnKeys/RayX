@@ -180,10 +180,16 @@ detection.
 
 ## Slice 3B — native validation against upstream supervision_dispatch + force_disconnect
 
-**Status (2026-08-18): native harness implemented, selftested, and run on Rostam hardware
-(medusa00, job 185466–185474). Build/topology/registration validated; the run is BLOCKED at
-`discover_and_join()` before any of the 16 gates could be exercised — see "Hardware run result"
-below.** Added
+**Status (2026-09-08): PASS — 16/16 gates on Rostam hardware (medusa00, job 192305) against
+upstream HPX `bec10f395059738193a1d53d1e8f02acc01f4ce2`.** The 2026-08-18 discovery blocker was
+an upstream AGAS symbol-routing defect, fixed upstream since; shutdown remains separately
+classified as INCONCLUSIVE. Both results are kept below in chronological order — see "Hardware
+run result (2026-08-18)" for the superseded blocked run and "Hardware run result (2026-09-08)"
+for the current one.
+
+*Superseded status (2026-08-18): native harness implemented, selftested, and run on Rostam
+hardware (medusa00, job 185466–185474). Build/topology/registration validated; the run was
+BLOCKED at `discover_and_join()` before any of the 16 gates could be exercised.* Added
 after hkaiser's status comment on HPX issue #7390 reported new upstream work (issue #7441,
 merged PR #7447 "Adding hpx::force_disconnect") built on top of the `components/supervision_dispatch`
 component landed since Slice 3A's 07-19 assessment. See
@@ -232,7 +238,15 @@ distinct from B's -> B's old (locality, epoch) pair still rejected, never confus
    automatically. Upstream does not wire fencing to `force_disconnect`; this experiment does not
    imply otherwise.
 
-### Gates (16 independent fields, `run_slice3b.py:GATE_FIELDS` / `eval_gates()`)
+### Gates (16 gate fields, `run_slice3b.py:GATE_FIELDS` / `eval_gates()`)
+
+All 16 are evaluated separately by `eval_gates()` from separate marker keys, and every one must
+be boolean-true for a PASS. Two pairs are **definitional aliases** rather than independent
+signals, because each pair is emitted from a single underlying value in `root_supervised.cpp`:
+`stale_incarnation_fenced` / `fenced_outcome_is_specific` are both the `fenced` result of the
+`check_admission()` probe loop, and `replacement_joined` / `replacement_work_ok` are both the
+`pc.ok` result of the replacement's plain probe. Count them as 16 gate fields carrying 14
+distinct signals; the aliases add naming clarity, not extra evidence.
 
 ```text
 connector_late_join_proven · pre_crash_work_ok · hard_crash_used ·
@@ -261,16 +275,28 @@ about which capability it actually exercised.
 
 ### Results
 
-**Selftest: 12/12 checks, 0 failures** (pure logic/schema; no Ray, no HPX) — a synthetic
+**Selftest: 32/32 checks, 0 failures** (pure logic/schema; no Ray, no HPX) — a synthetic
 all-pass marker set rolls up correctly, six independent signal flips each break exactly their
 own gate and the overall pass, a fully-graceful departure independently fails both
 `hard_crash_used` and `graceful_disconnect_used_is_false`, a missing-classification case names
 the specific `classification_not_observed` failure class rather than a generic one, and
 `GATE_FIELDS` stays in lockstep with `eval_gates()`.
 
-### Hardware run result (2026-08-18, Rostam job 185466–185474, medusa00)
+Ten of those checks (added 2026-09-08) exercise **incarnation-pair identity directly**, via the
+shared `incarnation_distinct()` helper: `(2,1) -> (3,1)` (a fresh locality that mints the same
+first epoch) is distinct, same-locality/new-epoch is distinct, same-locality/same-epoch is *not*
+distinct, the real hardware marker shape rolls up to a pass, and the composite reported by
+`root_supervised.cpp` must agree both with `incarnation_distinct()` and with the disjunction of
+the two components it now reports alongside it. These exist because the original bug (below)
+survived every earlier selftest: the synthetic marker set asserted
+`replacement_incarnation_distinct=True` outright and never modelled two localities that both
+minted epoch 1.
 
-**Verdict: BLOCKED at discovery, not PASS.** HPX (pinned commit `7b88345b6c72dfe1dabce1c0398e021f5ca55a4f`)
+### Hardware run result (2026-08-18, Rostam job 185466–185474, medusa00) — SUPERSEDED
+
+**Verdict: BLOCKED at discovery, not PASS.** *(Root cause identified and fixed upstream; kept
+here as provenance for the defect report. See the 2026-09-08 section below for the current
+result.)* HPX (pinned commit `7b88345b6c72dfe1dabce1c0398e021f5ca55a4f`)
 was rebuilt from scratch with `-DHPX_WITH_SUPERVISION=ON -DHPX_WITH_FORCE_DISCONNECT=ON` into an
 isolated install (`/work/bitayekrang/apps/hpx-supervision-install`, untouched canonical
 `hpx-master-20bc3d4b` install). The native harness built and linked against it (`ldd` confirmed
@@ -308,30 +334,135 @@ Slice 3B gates were exercised because the run never got past this point. Raw art
 seven run directories, and eight Rostam job logs are preserved under `_exp70_slice3b_runs/`
 (gitignored, kept locally) for independent review.
 
-### Rostam build/run (not executed this session)
+### Hardware run result (2026-09-08, Rostam jobs 192301–192305, medusa00) — CURRENT
+
+**semantic_result: PASS, 16/16 gates. shutdown_result: INCONCLUSIVE (see below).**
+
+HPX was rebuilt from scratch at upstream `bec10f395059738193a1d53d1e8f02acc01f4ce2` into a
+*fresh* isolated install (`/work/bitayekrang/apps/hpx-bec10f39-install`; the prior
+`hpx-supervision-install` and canonical `hpx-master-20bc3d4b-install` were left untouched), with
+`HPX_WITH_SUPERVISION=ON`, `FORCE_DISCONNECT=ON`, `DISTRIBUTED_RUNTIME=ON`, `NETWORKING=ON`,
+`PARCELPORT_TCP=ON`, Release/Ninja/g++ 15.1.0, C++20, `MALLOC=system`. Note `HPX_WITH_FAULT_TOLERANCE`
+now *defaults to* `HPX_WITH_SUPERVISION` upstream and therefore came out `ON` (it was `OFF` in the
+08-18 build). `ldd` confirmed both harness binaries load `libhpx_supervision_dispatch.so.2`,
+`libhpx.so.2` and `libhpx_core.so` from the new install.
+
+**The 08-18 discovery blocker is fixed upstream.** The isolation is exact: every locality-count
+observable is unchanged, and only the discovery-dependent fields flipped.
+
+| Observable | 08-18 (`7b88345`) | 09-08 (`bec10f39`) |
+|---|---|---|
+| root `get_initial_num_localities()` | 1 | 1 (unchanged) |
+| root `find_all_localities().size()` | 3 | 3 (unchanged) |
+| root `find_remote_localities().size()` | 2 | 2 (unchanged) |
+| raw `resolve_name("/1/…/registry")` from root | not found | resolved |
+| raw `resolve_name("/2/…/registry")` from root | not found | resolved |
+| root `discover_and_join()` | 0 peers | 2 peers: `{loc 1, ep 1}`, `{loc 2, ep 1}` |
+| connector A `discover_and_join()` | 0 peers | 2 peers: `[0, 2]` |
+
+The upstream fix is in `libs/full/agas_base/src/symbol_namespace.cpp`
+(`symbol_namespace_locality()`, commit `d5af2db3`, merged via PR #7471): an explicit
+`/<locality-id>/` name prefix now routes to that locality's symbol namespace unconditionally,
+where it was previously bounded by `get_initial_num_localities()` — which stays 1 in a
+late-connect topology, so `/1/…` and `/2/…` fell through to the Jenkins-hash path, `hash % 1 == 0`,
+and were looked up on locality 0, which never held them. That matches the reported signature
+exactly (a clean "not found", not a timeout).
+
+Evidence chain, identical across four runs (192302, two repeats in 192303, and the confirmation
+192305):
+
+* **Late-join proof:** both connectors `is_connecting=true` before the crash; A=(loc 1, ep 1),
+  B=(loc 2, ep 1).
+* **Pre-crash work:** verified against the oracle on both A and B.
+* **Hard crash:** SIGKILL, `pid_gone=true`, `graceful_disconnect_used=false`.
+* **Runtime-native classification:** the fence timeline moves
+  `admitted / last_event=running / event_seq=2` → `rejected_fenced / last_event=failed /
+  event_seq=3` over 7 probes at 200 ms, with `application_failed_event_publish_count == 0` at all
+  three observation points — HPX published `event::failed` itself. Crash-to-fence ≈0.4 s
+  (bounded ≲1.4 s; derived from marker-file mtimes against the Python kill timestamp, because the
+  harness's C++ `jnum(double)` quantizes every native `unix` field to 6 significant figures).
+* **Fencing oracle:** `check_admission()` → `rejected_fenced`, plus `dispatch_work` →
+  `HPX(target_fenced)`. Not a timeout, connection-refused, or target-not-found. *Caveat:* because
+  the fence short-circuits, this does not prove cross-binary fenced-action registration on a
+  *successful* dispatch — the wrapped action was never invoked.
+* **force_disconnect:** called from the console (locality 0) against locality 2 / epoch 1,
+  `rc=0`, no error, ~257 µs.
+* **Cleanup, three independent oracles:** AGAS resolve fails after; membership 3→2;
+  post-disconnect dispatch from root returns `not_found`.
+* **Third-party evidence:** connector A — a different locality, not the console — independently
+  reports B as `"locality not found locally"`, so the cache-purge broadcast reached a third party.
+* **Replacement:** C joins as (loc 3, ep 1), runs verified work; stale B stays `rejected_fenced`
+  and un-probeable.
+
+**Incarnation identity (the one corrected gate).** Runs 192302/192303 scored 15/16, failing only
+`replacement_incarnation_distinct`, because the harness required
+`replacement_locality_distinct && replacement_epoch_distinct`. That conjunction is unsatisfiable
+whenever HPX mints a fresh locality id, since every new locality's first `supervision::init()`
+yields epoch 1. Upstream settles the semantics: `server/registry.hpp`'s
+`operator==(joined_peer)` compares `target && join_epoch`, so identity is the **pair** and
+distinctness is the **disjunction**. The gate was corrected to `||` and both components are now
+reported separately. Confirmation run 192305 recorded:
+
+```text
+B = (locality 2, join_epoch 1)      C = (locality 3, join_epoch 1)
+replacement_locality_distinct                   = true
+replacement_epoch_distinct                      = false
+replacement_incarnation_distinct                = true
+stale_incarnation_not_confused_with_replacement = true   (still requires locality distinctness)
+```
+
+`stale_incarnation_not_confused_with_replacement` was left unchanged and still independently
+requires `replacement_locality_distinct`, so locality-id reuse cannot pass through the relaxed
+composite.
+
+**shutdown_result: INCONCLUSIVE — not attributed to upstream.** In all four runs the root wrote
+`root.finish_note {"rc":0,"note":"slice3b sequence complete"}` — so `supervision::finalize()`
+returned — and then hung in `hpx::finalize()`/`hpx::stop()` until the harness killed it after 30 s
+(`root_exit_path="hung_killed_by_harness"`). This is *confounded by harness teardown ordering*:
+`run_slice3b.py` waits for root exit before its `finally` block stops connectors A and C, so the
+console finalizes while two connect-mode localities are still attached, which would block in
+stock HPX regardless. Separating this from the shutdown issues upstream is still working on
+requires a teardown-ordering control that this pass deliberately did not run. No orphan processes
+were left on medusa00.
+
+### Rostam build/run (as executed, 2026-09-08)
 
 ```bash
 cd /work/bitayekrang/RayX
 module purge
 module load gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 python/3.12.3
-# 1. HPX must be (re)built with supervision enabled -- this repo's existing Rostam HPX build
-#    predates the merge, same as the local macOS one.
-cmake -S <hpx-src> -B <hpx-build> -DHPX_WITH_SUPERVISION=ON -DHPX_WITH_DISTRIBUTED_RUNTIME=ON \
-      -DHPX_WITH_NETWORKING=ON -DHPX_WITH_PARCELPORT_TCP=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build <hpx-build> -j"$(nproc)" --target install
-# 2. configure/build exp70 Slice 3B against that install
+# 1. fresh isolated HPX source pinned at the tested commit (prior installs left untouched)
+git clone https://github.com/TheHPXProject/hpx.git /work/bitayekrang/source/hpx-bec10f39-src
+git -C /work/bitayekrang/source/hpx-bec10f39-src checkout \
+    bec10f395059738193a1d53d1e8f02acc01f4ce2
+cmake -S /work/bitayekrang/source/hpx-bec10f39-src \
+      -B /work/bitayekrang/builds/hpx-bec10f39-build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/work/bitayekrang/apps/hpx-bec10f39-install \
+      -DHPX_WITH_SUPERVISION=ON -DHPX_WITH_FORCE_DISCONNECT=ON \
+      -DHPX_WITH_DISTRIBUTED_RUNTIME=ON -DHPX_WITH_NETWORKING=ON \
+      -DHPX_WITH_PARCELPORT_TCP=ON -DHPX_WITH_MALLOC=system \
+      -DHPX_WITH_FETCH_ASIO=ON -DHPX_WITH_CXX_STANDARD=20 \
+      -DHPX_WITH_EXAMPLES=ON -DHPX_WITH_TESTS=OFF
+# built via sbatch on medusa (40 cores, job 192301): ninja && ninja install
+# 2. configure/build exp70 Slice 3B against that install (fresh build dir -- a stale CMake
+#    cache would silently relink the previous HPX install)
 cmake -S experiments/70_hpx_locality_supervision/slice3_connector_loss_event/native \
       -B experiments/70_hpx_locality_supervision/slice3_connector_loss_event/native/build \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DPYBIND11_FINDPYTHON=ON \
-      -DCMAKE_PREFIX_PATH="<hpx-install>;$(python -m pybind11 --cmakedir)"
+      -DCMAKE_PREFIX_PATH="/work/bitayekrang/apps/hpx-bec10f39-install;$(python -m pybind11 --cmakedir)"
 cmake --build experiments/70_hpx_locality_supervision/slice3_connector_loss_event/native/build
-# 3. run
+# 3. run, on a medusa compute-node allocation (not the login node)
 source /work/bitayekrang/venvs/rayx-a2b/bin/activate
 python3 experiments/70_hpx_locality_supervision/slice3_connector_loss_event/run_slice3b.py \
         --selftest
 python3 experiments/70_hpx_locality_supervision/slice3_connector_loss_event/run_slice3b.py \
-        --phase local
+        --phase local --build-dir <native-build>
 ```
+
+Driver scripts as run: `exp70_slice3b_bec10f39_run.sbatch` (build + selftest + one live run) and
+`exp70_slice3b_bec10f39_repeat.sbatch` (two further live runs), both preserved under
+`_exp70_slice3b_runs/` alongside the HPX configure/build logs and `CMakeCache.txt`.
 
 ### Non-claims (Slice 3B specifically, in addition to Slice 3A's own)
 
