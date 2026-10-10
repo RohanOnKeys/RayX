@@ -33,7 +33,7 @@ export SLURM_EXPORT_ENV=ALL
 REPO=${RAYX_REPO:-/work/bitayekrang/RayX}
 S4=$REPO/experiments/70_hpx_locality_supervision/slice4_root_loss_event
 EXP68=$REPO/experiments/68_vocab_sharded_topk
-BUILD=$EXP68/build_rostam
+BUILD=${RAYX_EXP68_BUILD:-$EXP68/build_rostam}
 HPX=${RAYX_HPX_INSTALL:-/work/bitayekrang/apps/hpx-master-20bc3d4b-install}
 FIXED_SHA=${RAYX_HPX_SHA:-20bc3d4bf3068383edcb63be13f22e9ff95842fa}
 export RAYX_HPX_INSTALL="$HPX" RAYX_HPX_SHA="$FIXED_SHA"
