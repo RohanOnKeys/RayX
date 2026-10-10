@@ -41,6 +41,31 @@
     "subnet": "10.42.5.",
     "repo_commit_at_run": "be358b9"
   },
+  "slice4_control": {
+    "question": "Is the Slice 4A post-root-loss change caused by the HPX build or by nodes/pybind11?",
+    "design": "Same nodes as the recorded runs (medusa00/01), same venv (Ray 2.55.1, pybind11 3.1.0), same repo commit (90a2f59); only the HPX install and the exp68 build linked to it differ. Jobs chained with afterany.",
+    "old_hpx_build": {
+      "commit": "20bc3d4bf3068383edcb63be13f22e9ff95842fa",
+      "commit_date": "2026-07-13T15:43:18-05:00",
+      "build_job": 206557,
+      "build_node": "medusa00",
+      "options_on": [
+        "HPX_WITH_DISTRIBUTED_RUNTIME",
+        "HPX_WITH_NETWORKING",
+        "HPX_WITH_PARCELPORT_TCP"
+      ],
+      "supervision": "not enabled (feature postdates this commit)",
+      "stdexec": "pinned to 711da5971a8e8e940763c11bf6bbeb1c1bb22c3a (2026-07-12), the last stdexec main commit before the HPX commit date",
+      "why_pinned": "first build attempt (job 206556) fetched stdexec main of 2026-10-09 (5eee1768), which no longer declares stdexec::tag_invoke and related names, and failed to compile",
+      "install_identity": "defines.hpp HPX_HAVE_GIT_COMMIT 20bc3d4b...; exp68_peer links hpx-20bc3d4b-install/lib64/libhpx.so.2"
+    },
+    "new_hpx_build": {
+      "commit": "cc2be553fac9b1f2a372f4277d7c708e70bf7eb4",
+      "stdexec": "fetched from stdexec main at configure time on 2026-10-10; exact commit not recorded"
+    },
+    "result": "Old HPX: both actors call_timeout at 15.00 s in 2/2 runs (recorded behaviour reproduced). New HPX: both actors call_error_result in 6 to 8 ms in 2/2 runs. All 4 runs pass overall.",
+    "conclusion": "The change follows the HPX build (HPX commit plus the dependency versions fetched with it), not the nodes or pybind11."
+  },
   "recorded_baseline": {
     "slices_1_to_4_hpx_commit": "20bc3d4bf3068383edcb63be13f22e9ff95842fa",
     "slice3b_hpx_commit": "bec10f395059738193a1d53d1e8f02acc01f4ce2",
@@ -114,6 +139,24 @@
         "medusa13",
         "medusa14"
       ]
+    },
+    "slice4_control_old_hpx": {
+      "job": 206558,
+      "nodes": [
+        "medusa00",
+        "medusa01"
+      ],
+      "hpx_commit": "20bc3d4b",
+      "exp68_build": "68_vocab_sharded_topk/build_rostam_20bc3d4b"
+    },
+    "slice4_control_new_hpx": {
+      "job": 206559,
+      "nodes": [
+        "medusa00",
+        "medusa01"
+      ],
+      "hpx_commit": "cc2be553",
+      "exp68_build": "68_vocab_sharded_topk/build_rostam"
     },
     "slice3b": {
       "jobs": [
@@ -275,6 +318,8 @@
     ],
     "slice4": [
       {
+        "job": 206551,
+        "hpx_commit": "cc2be553",
         "runid": "20261010T085932Z",
         "overall": "pass",
         "failure_class": "pass",
@@ -324,6 +369,8 @@
         "markers_sha256": "24b1c83dcc1ee949806259875084d3557297c36ae465ca7da63fd518f83a5b1c"
       },
       {
+        "job": 206551,
+        "hpx_commit": "cc2be553",
         "runid": "20261010T090001Z",
         "overall": "pass",
         "failure_class": "pass",
@@ -371,6 +418,200 @@
         "aggregate_sha256": "57cb13f814b92858c59ed7aa10ccd4254c04d57590a3c839f5adf9dc8d6ffdca",
         "markers": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206551_20261010T090001Z/markers.json",
         "markers_sha256": "7776e437f7640cec6bcfca173e463899057e93a4a7910409a77e0f75ffe055ce"
+      }
+    ],
+    "slice4_control": [
+      {
+        "job": 206558,
+        "hpx_commit": "20bc3d4b",
+        "runid": "20261010T110316Z",
+        "overall": "pass",
+        "failure_class": "pass",
+        "gates": {
+          "groups": 31,
+          "leaf_checks_true": 205,
+          "leaf_checks_total": 205
+        },
+        "gates_failed": {},
+        "normal_event": "explicit_completion",
+        "loss_event": "suspected_root_loss",
+        "suspicion_bound_s": 5.0,
+        "expected_refresh_s": 0.2,
+        "loss_observed_silence_s": 5.013322257029358,
+        "normal_observed_silence_s": 7.455993909388781e-06,
+        "classifier_fingerprint": "774ebdc6147bad94220fe34d374c84769dab32b89c19e974d1627bec053809d0",
+        "post_loss_actor_observations": {
+          "a": {
+            "category": "call_timeout",
+            "elapsed_s": 15.001564992999192,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": "Get timed out: some object(s) not ready."
+          },
+          "b": {
+            "category": "call_timeout",
+            "elapsed_s": 15.001415710023139,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": "Get timed out: some object(s) not ready."
+          }
+        },
+        "controller_host": "medusa00",
+        "post_run_orphan_check": {
+          "medusa00": [],
+          "medusa01": []
+        },
+        "aggregate": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206558_20261010T110316Z/aggregate.json",
+        "aggregate_sha256": "927cdf7f025dd5a02d6f4c188becd830a8b83a51b66c2a6312a9ac23a24f1319",
+        "markers": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206558_20261010T110316Z/markers.json",
+        "markers_sha256": "e06412b1e9b23d7f29b6706624099218bde3a244a13dd97e4aa6743cb3fcc028"
+      },
+      {
+        "job": 206558,
+        "hpx_commit": "20bc3d4b",
+        "runid": "20261010T110416Z",
+        "overall": "pass",
+        "failure_class": "pass",
+        "gates": {
+          "groups": 31,
+          "leaf_checks_true": 205,
+          "leaf_checks_total": 205
+        },
+        "gates_failed": {},
+        "normal_event": "explicit_completion",
+        "loss_event": "suspected_root_loss",
+        "suspicion_bound_s": 5.0,
+        "expected_refresh_s": 0.2,
+        "loss_observed_silence_s": 5.013212916033808,
+        "normal_observed_silence_s": 0.0,
+        "classifier_fingerprint": "774ebdc6147bad94220fe34d374c84769dab32b89c19e974d1627bec053809d0",
+        "post_loss_actor_observations": {
+          "a": {
+            "category": "call_timeout",
+            "elapsed_s": 15.00159130396787,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": "Get timed out: some object(s) not ready."
+          },
+          "b": {
+            "category": "call_timeout",
+            "elapsed_s": 15.001603737997357,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": "Get timed out: some object(s) not ready."
+          }
+        },
+        "controller_host": "medusa00",
+        "post_run_orphan_check": {
+          "medusa00": [],
+          "medusa01": []
+        },
+        "aggregate": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206558_20261010T110416Z/aggregate.json",
+        "aggregate_sha256": "fa8ad626e5ac8d9d8a385a1c0a88c6e22b608c09cc79641518b1f8128643a90e",
+        "markers": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206558_20261010T110416Z/markers.json",
+        "markers_sha256": "d170211b0f3ee1e9337ba10cb107b0e39e080e7775663a9cc7850bf98fd9921d"
+      },
+      {
+        "job": 206559,
+        "hpx_commit": "cc2be553",
+        "runid": "20261010T110522Z",
+        "overall": "pass",
+        "failure_class": "pass",
+        "gates": {
+          "groups": 31,
+          "leaf_checks_true": 205,
+          "leaf_checks_total": 205
+        },
+        "gates_failed": {},
+        "normal_event": "explicit_completion",
+        "loss_event": "suspected_root_loss",
+        "suspicion_bound_s": 5.0,
+        "expected_refresh_s": 0.2,
+        "loss_observed_silence_s": 5.013438822003081,
+        "normal_observed_silence_s": 7.444003131240606e-06,
+        "classifier_fingerprint": "774ebdc6147bad94220fe34d374c84769dab32b89c19e974d1627bec053809d0",
+        "post_loss_actor_observations": {
+          "a": {
+            "category": "call_error_result",
+            "elapsed_s": 0.00801746203796938,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": {
+              "error": "RuntimeError: Connection reset by peer: ",
+              "ok": false
+            }
+          },
+          "b": {
+            "category": "call_error_result",
+            "elapsed_s": 0.006849718978628516,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": {
+              "error": "RuntimeError: Connection reset by peer: ",
+              "ok": false
+            }
+          }
+        },
+        "controller_host": "medusa00",
+        "post_run_orphan_check": {
+          "medusa00": [],
+          "medusa01": []
+        },
+        "aggregate": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206559_20261010T110522Z/aggregate.json",
+        "aggregate_sha256": "53756b817c83f9fa8e996ed0b8573c160d422fee6358356a9cf799b092dcb5cb",
+        "markers": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206559_20261010T110522Z/markers.json",
+        "markers_sha256": "29332d0e7ca4f69641ee19aaa2c0a9f28e9b50c3601d16a3385e2528d7577e3c"
+      },
+      {
+        "job": 206559,
+        "hpx_commit": "cc2be553",
+        "runid": "20261010T110552Z",
+        "overall": "pass",
+        "failure_class": "pass",
+        "gates": {
+          "groups": 31,
+          "leaf_checks_true": 205,
+          "leaf_checks_total": 205
+        },
+        "gates_failed": {},
+        "normal_event": "explicit_completion",
+        "loss_event": "suspected_root_loss",
+        "suspicion_bound_s": 5.0,
+        "expected_refresh_s": 0.2,
+        "loss_observed_silence_s": 5.013530978991184,
+        "normal_observed_silence_s": 7.771013770252466e-06,
+        "classifier_fingerprint": "774ebdc6147bad94220fe34d374c84769dab32b89c19e974d1627bec053809d0",
+        "post_loss_actor_observations": {
+          "a": {
+            "category": "call_error_result",
+            "elapsed_s": 0.005977641965728253,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": {
+              "error": "RuntimeError: Connection reset by peer: ",
+              "ok": false
+            }
+          },
+          "b": {
+            "category": "call_error_result",
+            "elapsed_s": 0.005751741991844028,
+            "bound_s": 15.0,
+            "bounded": true,
+            "verbatim": {
+              "error": "RuntimeError: Connection reset by peer: ",
+              "ok": false
+            }
+          }
+        },
+        "controller_host": "medusa00",
+        "post_run_orphan_check": {
+          "medusa00": [],
+          "medusa01": []
+        },
+        "aggregate": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206559_20261010T110552Z/aggregate.json",
+        "aggregate_sha256": "05da4782122700701aa4def8621480035729ab1456ad937130e174e6c4204fc0",
+        "markers": "slice4_root_loss_event/_exp70_slice4_runs/crossnode_206559_20261010T110552Z/markers.json",
+        "markers_sha256": "929e4f637b9311151527b24c4e277bd1a8e6be589b5e90bae546a3991c133d23"
       }
     ],
     "slice3b": [
@@ -486,7 +727,7 @@
     ],
     "shutdown_detail": "Slice 3B root.finish_note (written right after hpx::supervision::finalize() returns) exists in runs 1 to 3 but not in run 4 (medusa11). Runs 1 to 3 hung later in hpx::finalize()/hpx::stop(), as recorded; run 4 most likely hung inside hpx::supervision::finalize() itself. Harness-confounded, single occurrence, not attributed.",
     "changed": [
-      "Slice 4A post-loss actor probes: both actors returned call_error_result ('RuntimeError: Connection reset by peer') within about 6 to 10 ms in both runs, where the recorded hardware runs on HPX 20bc3d4b returned call_timeout at the 15 s bound. exp70 README key finding 1 ('calls blocked rather than failing promptly') does not reproduce here. Not attributed: HPX commit, nodes (medusa13/14 vs medusa00/01) and pybind11 version all differ from the recorded run."
+      "Slice 4A post-loss actor probes: both actors returned call_error_result ('RuntimeError: Connection reset by peer') within about 6 to 10 ms in both runs, where the recorded hardware runs on HPX 20bc3d4b returned call_timeout at the 15 s bound. exp70 README key finding 1 ('calls blocked rather than failing promptly') does not reproduce here. A same-node control (see slice4_control) attributes the change to the HPX build, not to nodes or pybind11."
     ],
     "not_run": [
       "Slice 0 (user decision)",
@@ -497,7 +738,7 @@
     "no performance claim",
     "no production or fault-tolerance claim",
     "no claim that the Slice 3B shutdown hang is an HPX defect or that it is fixed",
-    "no attribution of the Slice 4A change to a specific HPX commit",
+    "no attribution of the Slice 4A change to a specific HPX commit inside 20bc3d4b..cc2be553, and no separation of HPX itself from its fetched dependencies",
     "no Ray-vs-HPX comparison"
   ]
 }

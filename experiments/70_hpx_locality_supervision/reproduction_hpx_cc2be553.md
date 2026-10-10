@@ -21,7 +21,9 @@ instead of the pinned commits used for the recorded evidence (`20bc3d4b` for Sli
 * **One recorded observation did not reproduce.** After unexpected root loss (Slice 4A), the
   actor-hosted HPX calls failed within about 6 to 10 ms with `Connection reset by peer`. In the
   recorded runs the same calls blocked until the 15 s observation bound. This contradicts exp70
-  key finding 1 as observed on this build and these nodes. The cause is not yet attributed.
+  key finding 1. A same-node control shows the change follows the HPX build: on medusa00/01 with
+  everything else identical, HPX `20bc3d4b` still blocks for 15 s and HPX `cc2be553` fails in
+  milliseconds.
 * **Not run:** Slice 0, and the local (single-machine) phases of Slices 1 to 4.
 
 ## Setup
@@ -176,15 +178,50 @@ observed behaviour, not a test failure.
 **What it suggests:** on this build and these nodes, an actor-hosted HPX locality notices that
 the root's TCP connection is gone and fails the call immediately, instead of blocking.
 
-**What it does not establish:** which change caused it. Three things differ from the recorded
-run:
-
-1. the HPX commit (`cc2be553` vs `20bc3d4b`);
-2. the nodes (medusa13/14 vs medusa00/01);
-3. the pybind11 version used to build the exp68 extension.
-
 The external suspected-root-loss classification is unaffected. It still needed the full 5 s of
 witness silence. An HPX connection error is not a classified lifecycle event.
+
+### Control: same nodes, two HPX builds
+
+Three things differed between the first reproduction and the recorded run: the HPX commit, the
+nodes (medusa13/14 vs medusa00/01) and the pybind11 version. To separate them, Slice 4A was run
+twice more on **medusa00/01**, the recorded node pair, from the same venv (Ray 2.55.1, pybind11
+3.1.0) and the same repo commit (`90a2f59`). Only the HPX install, and the exp68 build linked
+against it, differed between the two jobs. The jobs were chained so they did not overlap.
+
+| Job | HPX | Run | Actor A | Actor B | Overall |
+|---|---|---|---|---|---|
+| 206558 | `20bc3d4b` | 20261010T110316Z | `call_timeout`, 15.002 s | `call_timeout`, 15.001 s | pass |
+| 206558 | `20bc3d4b` | 20261010T110416Z | `call_timeout`, 15.002 s | `call_timeout`, 15.002 s | pass |
+| 206559 | `cc2be553` | 20261010T110522Z | `call_error_result`, 0.008 s | `call_error_result`, 0.007 s | pass |
+| 206559 | `cc2be553` | 20261010T110552Z | `call_error_result`, 0.006 s | `call_error_result`, 0.006 s | pass |
+
+Root loss was classified as `suspected_root_loss` at 5.013 s of silence in all four runs.
+
+**Result:** on the recorded nodes, the recorded HPX commit reproduces the recorded behaviour
+exactly, and the current HPX commit fails promptly, as it also did on medusa13/14. The change
+follows the HPX build. The nodes and the pybind11 version are ruled out.
+
+**How the old HPX was built:** HPX `20bc3d4b` with the same options as the main build, except
+the supervision options, which that commit predates (`HPX_WITH_DISTRIBUTED_RUNTIME`,
+`HPX_WITH_NETWORKING`, `HPX_WITH_PARCELPORT_TCP` ON; examples and tests OFF; Release, C++20,
+`MALLOC=system`). Build job 206557 on medusa00 succeeded. The installed `defines.hpp` carries
+`20bc3d4b`, and the old exp68 build was checked with `ldd` to link that install's
+`libhpx.so.2`.
+
+At this commit stdexec is mandatory and is fetched from the stdexec `main` branch. The first
+build attempt (job 206556) fetched stdexec `main` as of 2026-10-09 (`5eee1768`), which no longer
+declares `stdexec::tag_invoke` and related names, so HPX failed to compile. The stdexec checkout
+was therefore pinned to `711da597` (2026-07-12), the last stdexec `main` commit before the HPX
+commit date (2026-07-13).
+
+**What it still does not establish:**
+
+* which HPX commit between `20bc3d4b` and `cc2be553` made the difference;
+* whether the change is in HPX itself or in a dependency fetched with it. The two builds use
+  different stdexec versions (pinned July version vs October `main`, exact commit not recorded),
+  and Asio may also differ. A TCP connection-reset behaviour points to HPX's networking layer
+  rather than to stdexec, but this control does not prove that.
 
 ## Not run
 
@@ -202,24 +239,29 @@ Supported:
 > On HPX master `cc2be553`, exp70 Slices 1, 2A, 3A and 4A reproduce cross-node on Rostam (2/2 runs
 > each), and Slice 3B reproduces 16/16 in 4/4 runs on four nodes, with shutdown still
 > INCONCLUSIVE. After unexpected root loss, the actor-hosted HPX calls failed promptly with a
-> connection reset, instead of blocking to the 15 s bound as recorded on `20bc3d4b`.
+> connection reset, instead of blocking to the 15 s bound. A same-node control on medusa00/01
+> shows this follows the HPX build: HPX `20bc3d4b` still blocks to the bound there, and HPX
+> `cc2be553` fails in milliseconds.
 
 Not claimed:
 
 * no performance, production or fault-tolerance claim;
 * no claim that the Slice 3B shutdown hang is an HPX defect, or that it is fixed;
-* no attribution of the Slice 4A behaviour change to a specific HPX commit;
+* no attribution of the Slice 4A behaviour change to a specific HPX commit inside
+  `20bc3d4b..cc2be553`, and no separation of HPX from its fetched dependencies;
+* no claim that prompt failure is guaranteed for other failure modes, topologies or networks;
 * no Ray versus HPX comparison.
 
 ## Roadmap impact
 
-**Roadmap narrowed.** The external lifecycle contract and the Slice 3B native path both hold on
-current HPX. Key finding 1 is now build- or environment-dependent and needs a control before it
-can be restated.
+**Roadmap changed.** The external lifecycle contract and the Slice 3B native path both hold on
+current HPX. Key finding 1 (post-root-loss calls block) is specific to HPX `20bc3d4b`. On current
+master the surviving actor-hosted localities fail calls promptly after root loss, so the
+supervisor no longer depends on its call bounds just to avoid being stranded in this scenario.
+The external bounded root-loss classification is still needed, because a connection error is not
+a classified HPX lifecycle event.
 
 ## Next step
 
-Run Slice 4A on medusa00/01 twice: once against HPX `20bc3d4b` and once against `cc2be553`, with
-everything else the same. If `20bc3d4b` still blocks and `cc2be553` fails promptly, the change
-comes from HPX and the commit range can then be narrowed. If both fail promptly, the recorded
-blocking behaviour depended on the environment rather than on HPX.
+Bisect `20bc3d4b..cc2be553` on Slice 4A at medusa00/01, keeping the venv and nodes fixed, to find
+the HPX commit after which post-root-loss actor calls fail promptly.

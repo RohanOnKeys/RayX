@@ -383,7 +383,8 @@ logs are deliberately untracked (see `.gitignore`); they remain on disk for loca
 An independent reproduction against HPX master `cc2be553` (2026-10-10) is in
 [`reproduction_hpx_cc2be553.md`](reproduction_hpx_cc2be553.md). Slices 1 to 4 and 3B reproduce
 there, but after root loss the actor-hosted HPX calls failed promptly instead of blocking, so
-key finding 1 above did not reproduce on that build and those nodes.
+key finding 1 above did not reproduce. A same-node control ties that change to the HPX build:
+HPX `20bc3d4b` still blocks, HPX `cc2be553` fails in milliseconds.
 
 ## Relationship to upstream HPX work
 
