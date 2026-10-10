@@ -18,7 +18,7 @@ module purge >/dev/null 2>&1
 module load gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 || { echo "STOP: module load failed"; exit 70; }
 export SLURM_EXPORT_ENV=ALL
 
-EXP70=/work/bitayekrang/RayX/experiments/70_hpx_locality_supervision
+EXP70=${RAYX_REPO:-/work/bitayekrang/RayX}/experiments/70_hpx_locality_supervision
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 RESULT_ROOT="$EXP70/_exp70_rostam_runs/${STAMP}_slice0_linux_loopback"
 mkdir -p "$RESULT_ROOT/work" || { echo "STOP: cannot create result root"; exit 70; }
@@ -44,8 +44,8 @@ cp -- "$0" "$RESULT_ROOT/runner_used.sh" 2>/dev/null || true
 } >"$RESULT_ROOT/env_identity.txt" 2>&1
 
 # ---- HPX identity gate (fail before building) -------------------------------------------------
-HPX_PREFIX=/work/bitayekrang/apps/hpx-master-20bc3d4b-install
-EXPECTED=20bc3d4bf3068383edcb63be13f22e9ff95842fa
+HPX_PREFIX=${RAYX_HPX_INSTALL:-/work/bitayekrang/apps/hpx-master-20bc3d4b-install}
+EXPECTED=${RAYX_HPX_SHA:-20bc3d4bf3068383edcb63be13f22e9ff95842fa}
 grep HPX_HAVE_GIT_COMMIT "$HPX_PREFIX/include/hpx/config/defines.hpp" >"$RESULT_ROOT/hpx_identity.txt" 2>&1
 if ! grep -q "\"$EXPECTED\"" "$HPX_PREFIX/include/hpx/config/defines.hpp"; then
     echo "STOP: installed HPX commit does not match $EXPECTED" | tee -a "$RESULT_ROOT/hpx_identity.txt"
