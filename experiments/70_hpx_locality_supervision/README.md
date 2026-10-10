@@ -380,6 +380,11 @@ evidence and hash verification — are in [`evidence_index.md`](evidence_index.m
 Curated evidence JSON files are tracked. Raw run directories, copy-back trees, build trees and
 logs are deliberately untracked (see `.gitignore`); they remain on disk for local inspection.
 
+An independent reproduction against HPX master `cc2be553` (2026-10-10) is in
+[`reproduction_hpx_cc2be553.md`](reproduction_hpx_cc2be553.md). Slices 1 to 4 and 3B reproduce
+there, but after root loss the actor-hosted HPX calls failed promptly instead of blocking, so
+key finding 1 above did not reproduce on that build and those nodes.
+
 ## Relationship to upstream HPX work
 
 * **HPX #7384** — found during stale-target dispatch in Slice 0; posted, fixed, regression-test
