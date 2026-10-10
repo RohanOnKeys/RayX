@@ -19,35 +19,48 @@ module purge
 module load gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 python/3.12.3
 export SLURM_EXPORT_ENV=ALL
 
-RAYX=/work/bitayekrang/RayX
+RAYX=${RAYX_REPO:-/work/bitayekrang/RayX}
 EXP70=$RAYX/experiments/70_hpx_locality_supervision
 SLICE3=$EXP70/slice3_connector_loss_event
 RUNS=$SLICE3/_exp70_slice3b_runs
 mkdir -p "$RUNS"
 
-HPX_SRC=/work/bitayekrang/source/hpx-supervision-src
-HPX_BUILD=/work/bitayekrang/builds/hpx-supervision-build
-HPX_INSTALL=/work/bitayekrang/apps/hpx-supervision-install
-PINNED_COMMIT=7b88345b6c72dfe1dabce1c0398e021f5ca55a4f
+# RAYX_HPX_* overrides point this launcher at an already-installed supervision-enabled HPX
+# (e.g. a current-master build). The defaults reproduce the recorded pinned-commit build.
+HPX_SRC=${RAYX_HPX_SRC:-/work/bitayekrang/source/hpx-supervision-src}
+HPX_BUILD=${RAYX_HPX_BUILD:-/work/bitayekrang/builds/hpx-supervision-build}
+HPX_INSTALL=${RAYX_HPX_INSTALL:-/work/bitayekrang/apps/hpx-supervision-install}
+PINNED_COMMIT=${RAYX_HPX_SHA:-7b88345b6c72dfe1dabce1c0398e021f5ca55a4f}
+HPX_CONFIG=$(ls "$HPX_INSTALL"/lib64/cmake/HPX/HPXConfig.cmake "$HPX_INSTALL"/lib/cmake/HPX/HPXConfig.cmake 2>/dev/null | head -1)
 
 echo "=== PHASE 1: HPX source (pinned commit, NOT touching the canonical hpx-master-20bc3d4b install) ==="
-if [ ! -d "$HPX_SRC/.git" ]; then
-  git clone https://github.com/TheHPXProject/hpx.git "$HPX_SRC"
+if [ -n "$HPX_CONFIG" ]; then
+  # Never move an existing install's source tree: record what it was built from instead.
+  echo "existing install $HPX_INSTALL found; leaving $HPX_SRC checkout untouched"
+  cd "$HPX_SRC"
+else
+  if [ ! -d "$HPX_SRC/.git" ]; then
+    git clone https://github.com/TheHPXProject/hpx.git "$HPX_SRC"
+  fi
+  cd "$HPX_SRC"
+  git fetch origin master
+  git checkout "$PINNED_COMMIT"
 fi
-cd "$HPX_SRC"
-git fetch origin master
-git checkout "$PINNED_COMMIT"
 echo "HPX_SRC_COMMIT=$(git rev-parse HEAD)"
 echo "HPX_SRC_COMMIT_DATE=$(git log -1 --format=%cI)"
+if [ -n "${RAYX_HPX_SHA:-}" ] && [ "$(git rev-parse HEAD)" != "$PINNED_COMMIT" ]; then
+  echo "FATAL: HPX source is at $(git rev-parse HEAD), expected RAYX_HPX_SHA=$PINNED_COMMIT"
+  exit 8
+fi
 
 echo "=== PHASE 2: configure HPX with supervision ==="
 # Idempotency check uses the INSTALLED artifact, not a cache flag: CMake writes cache entries
 # incrementally even on a failed configure (e.g. the prior attempt's Asio FetchContent failure
 # still left HPX_WITH_SUPERVISION=ON in a half-configured cache), so a cache-flag check alone is
 # unreliable. Only a completed `--target install` proves a working build exists.
-CANONICAL_DEPS=/work/bitayekrang/builds/hpx-master-build/_deps
+CANONICAL_DEPS=${RAYX_HPX_DEPS:-/work/bitayekrang/builds/hpx-master-build/_deps}
 NEED_BUILD=1
-if [ -f "$HPX_INSTALL/lib64/cmake/HPX/HPXConfig.cmake" ]; then
+if [ -n "$HPX_CONFIG" ]; then
   NEED_BUILD=0
   echo "existing $HPX_INSTALL already has a completed install, reusing (skip configure+build)"
 fi
@@ -105,11 +118,11 @@ fi
 echo "=== PHASE 3 VERIFY: installed supervision_dispatch component + force_disconnect header ==="
 find "$HPX_INSTALL" -iname "*supervision_dispatch*" | head -20
 grep -n "HPX_HAVE_SUPERVISION\|HPX_HAVE_FORCE_DISCONNECT" "$HPX_INSTALL"/include/hpx/config/*.hpp 2>/dev/null | head -10
-test -e "$HPX_INSTALL/lib64/cmake/HPX/HPXConfig.cmake" && echo "HPXConfig.cmake present"
-find "$HPX_INSTALL/lib" -iname "*supervision*"
+test -n "$HPX_CONFIG" && echo "HPXConfig.cmake present: $HPX_CONFIG"
+find "$HPX_INSTALL/lib" "$HPX_INSTALL/lib64" -iname "*supervision*" 2>/dev/null
 
 echo "=== PHASE 4: configure + build Slice 3B native harness against the new install ==="
-source /work/bitayekrang/venvs/rayx-a2b/bin/activate
+source "${RAYX_VENV:-/work/bitayekrang/venvs/rayx-a2b}/bin/activate"
 PYBIND11_CMAKE_DIR=$(python -m pybind11 --cmakedir)
 echo "PYBIND11_CMAKE_DIR=$PYBIND11_CMAKE_DIR"
 

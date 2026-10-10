@@ -22,13 +22,14 @@ set -euo pipefail
 
 module purge
 module load gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 python/3.12.3
-source /work/bitayekrang/venvs/rayx-a2b/bin/activate
+source "${RAYX_VENV:-/work/bitayekrang/venvs/rayx-a2b}/bin/activate"
 export SLURM_EXPORT_ENV=ALL
 
-REPO=/work/bitayekrang/RayX
+REPO=${RAYX_REPO:-/work/bitayekrang/RayX}
 EXP=$REPO/experiments/68_vocab_sharded_topk
-HPX=/work/bitayekrang/apps/hpx-master-20bc3d4b-install
-FIXED_SHA=20bc3d4bf3068383edcb63be13f22e9ff95842fa
+HPX=${RAYX_HPX_INSTALL:-/work/bitayekrang/apps/hpx-master-20bc3d4b-install}
+FIXED_SHA=${RAYX_HPX_SHA:-20bc3d4bf3068383edcb63be13f22e9ff95842fa}
+export RAYX_HPX_INSTALL="$HPX" RAYX_HPX_SHA="$FIXED_SHA"
 
 export LD_LIBRARY_PATH="$HPX/lib:$HPX/lib64:${LD_LIBRARY_PATH:-}"
 

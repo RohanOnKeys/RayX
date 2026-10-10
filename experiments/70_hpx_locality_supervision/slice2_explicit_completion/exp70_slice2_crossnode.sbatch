@@ -20,15 +20,16 @@ set -euo pipefail
 
 module purge
 module load gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 python/3.12.3
-source /work/bitayekrang/venvs/rayx-a2b/bin/activate
+source "${RAYX_VENV:-/work/bitayekrang/venvs/rayx-a2b}/bin/activate"
 export SLURM_EXPORT_ENV=ALL
 
-REPO=/work/bitayekrang/RayX
+REPO=${RAYX_REPO:-/work/bitayekrang/RayX}
 S2=$REPO/experiments/70_hpx_locality_supervision/slice2_explicit_completion
 EXP68=$REPO/experiments/68_vocab_sharded_topk
 BUILD=$EXP68/build_rostam
-HPX=/work/bitayekrang/apps/hpx-master-20bc3d4b-install
-FIXED_SHA=20bc3d4bf3068383edcb63be13f22e9ff95842fa
+HPX=${RAYX_HPX_INSTALL:-/work/bitayekrang/apps/hpx-master-20bc3d4b-install}
+FIXED_SHA=${RAYX_HPX_SHA:-20bc3d4bf3068383edcb63be13f22e9ff95842fa}
+export RAYX_HPX_INSTALL="$HPX" RAYX_HPX_SHA="$FIXED_SHA"
 SUBNET=10.42.5.
 RUNS=$S2/_exp70_slice2_runs
 export LD_LIBRARY_PATH="$HPX/lib:$HPX/lib64:${LD_LIBRARY_PATH:-}"
@@ -222,9 +223,9 @@ man = {
               "partition": os.environ.get("SLURM_JOB_PARTITION", ""),
               "sacct": open(os.path.join(runs_dir, f"sacct_{job}.txt")).read().splitlines()
               if os.path.isfile(os.path.join(runs_dir, f"sacct_{job}.txt")) else []},
-    "environment": {"hpx_install": os.environ.get("HPX_INSTALL_RECORDED",
+    "environment": {"hpx_install": os.environ.get("RAYX_HPX_INSTALL",
                                                   "/work/bitayekrang/apps/hpx-master-20bc3d4b-install"),
-                    "hpx_fixed_sha": "20bc3d4bf3068383edcb63be13f22e9ff95842fa",
+                    "hpx_fixed_sha": os.environ.get("RAYX_HPX_SHA", "20bc3d4bf3068383edcb63be13f22e9ff95842fa"),
                     "modules": "gcc/15.1.0 cmake/3.29.2 boost/1.91.0-release hwloc/2.12.0 "
                                "python/3.12.3 (module purge first)",
                     "venv": os.environ.get("VIRTUAL_ENV", ""),
